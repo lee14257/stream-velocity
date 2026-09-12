@@ -1,0 +1,34 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "stream-velocity"
+version = "0.1.0"
+description = "A zero-dependency, bounded-memory Python library for sub-5ms sliding-window transaction velocity aggregations."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "Woo Chan Lee" }
+]
+keywords = ["fraud-detection", "streaming", "velocity", "feature-store", "fintech"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Software Development :: Libraries :: Python Modules"
+]
+
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/stream_velocity"]
