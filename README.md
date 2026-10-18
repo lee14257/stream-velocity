@@ -5,6 +5,10 @@
 
 `stream-velocity` is a zero-dependency, bounded-memory Python library designed for real-time transaction velocity aggregations across sliding time windows. Built specifically for low-latency feature evaluation in financial risk processing pipelines, credit card fraud engines, and payment security middleware.
 
+## Project Scope
+
+`stream-velocity` is deliberately scoped to a single, well-tested primitive — sliding-window velocity aggregation — rather than a monolithic fraud platform. It is one component of a larger open-source fraud-detection framework, alongside a deterministic rule-evaluation engine (`audit-rules`) and streaming ingestion examples. This micro-library approach keeps each component small, auditable, and maintainable by a single engineer while remaining deployable on resource-constrained infrastructure (<100 MB RAM).
+
 ---
 
 ## Real-World Problem & Tradeoffs
@@ -31,8 +35,10 @@ Evaluating velocity rules (e.g., *"Has account X executed >5 payments in the las
 ## Installation
 
 ```bash
-pip install stream-velocity
+pip install -e .
 ```
+
+> **Note:** A public PyPI release is in progress. Until then, install directly from source as shown above.
 
 ## Quick Start
 
@@ -87,13 +93,16 @@ Run the automated latency SLA benchmark suite locally:
 python3 tests/benchmark_latency.py
 ```
 
-### Benchmark Output Target
+### Benchmark Output (representative local run)
+
+The following output was captured on an Apple M-series MacBook Air running Python 3.10.
+Absolute timings vary by machine; the SLA assertion (`< 5.0 ms`) is enforced in CI on every push.
 
 ```
 --- Running stream-velocity benchmark: 100,000 events ---
-Total write time for 100,000 events: 82.40 ms
-Average write latency per event: 0.82 µs
-Read query latency: 0.3810 ms
+Total write time for 100,000 events: 61.88 ms
+Average write latency per event: 0.62 µs
+Read query latency: 0.0418 ms
 Aggregation result: 100000 events, $1,000,000.00
 SLA Target Passed: Query execution < 5.0 ms
 ```
