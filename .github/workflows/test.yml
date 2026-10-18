@@ -31,3 +31,6 @@ jobs:
 
       - name: Run SLA benchmark
         run: python tests/benchmark_latency.py
+
+      - name: Run memory benchmark
+        run: python tests/benchmark_memory.py

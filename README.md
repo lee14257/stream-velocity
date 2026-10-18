@@ -25,10 +25,10 @@ Evaluating velocity rules (e.g., *"Has account X executed >5 payments in the las
 
 ## Key Features
 
-* **Zero Dependencies:** Pure Python 3.9+ with zero external database or C-extension requirements.
-* **O(1) Execution:** Constant-time updates and queries using fixed array index arithmetic regardless of stream throughput.
-* **Bounded RAM Footprint:** Pre-allocated integer/float primitives prevent memory fragmentation and eliminate dynamic array expansion.
-* **Low Latency SLA:** Guaranteed sub-5ms read execution under sustained throughputs of 100,000+ synthetic events.
+* **No dependencies:** Pure Python 3.9+ only — no database, no C extensions.
+* **Always fast:** Updates and lookups take the same time whether you process 10 or 10 million events (this is what "O(1)" means).
+* **Fixed memory:** The counters are created once up front and reused forever, so memory use stays the same no matter how many events arrive.
+* **Low latency:** Reads stay under 5 ms even while processing 100,000+ events.
 
 ---
 
@@ -93,6 +93,19 @@ Run the automated latency SLA benchmark suite locally:
 python3 tests/benchmark_latency.py
 ```
 
+### How much memory does it use?
+
+Run the memory benchmark to confirm the library uses a fixed amount of memory:
+
+```bash
+python3 tests/benchmark_memory.py
+```
+
+The library creates its counters once when it starts and reuses them as time
+moves forward, so it never allocates more memory as events pile up. A typical
+5-minute window uses only a few kilobytes — far below the 100 MB ceiling a
+lightweight fraud service can run within.
+
 ### Benchmark Output (representative local run)
 
 The following output was captured on an Apple M-series MacBook Air running Python 3.10.
@@ -106,6 +119,18 @@ Read query latency: 0.0418 ms
 Aggregation result: 100000 events, $1,000,000.00
 SLA Target Passed: Query execution < 5.0 ms
 ```
+
+## Running with Docker
+
+A minimal image is provided that installs the library and runs the speed
+benchmark:
+
+```bash
+docker build -t stream-velocity .
+docker run --rm stream-velocity
+```
+
+The image is built on Alpine Linux so it stays small.
 
 ## Running Unit Tests
 
