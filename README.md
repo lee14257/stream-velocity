@@ -2,34 +2,11 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python Version](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
+[![CI](https://img.shields.io/github/actions/workflow/status/lee14257/stream-velocity/test.yml?branch=main)](https://github.com/lee14257/stream-velocity/actions/workflows/test.yml)
 
-`stream-velocity` is a small, fast Python library that counts how many transactions happen in a rolling time window (for example, "the last 5 minutes"), and how much they total. It has no dependencies and keeps its memory use fixed no matter how much data flows through it, which makes it a good fit for fraud-detection and rate-limiting checks in real-time payment and e-commerce systems.
+`stream-velocity` is a small, dependency-free Python library that answers one question in real time: **"how many events happened in the last few minutes, and how much did they total?"** — per account, card, or any other entity.
 
----
-
-## Real-World Problem & Tradeoffs
-
-A fraud system constantly needs to answer *"has account X made more than 5 payments in the last 5 minutes?"* — instantly, over and over, as events stream in.
-
-The usual ways to solve this, and why they hurt:
-
-1. **Ask the database each time** (`SELECT COUNT(*)`): simple, but every query takes 50–100 ms and gets slower as the table grows.
-2. **Keep every event in a growing list** (`collections.deque`): works until the list gets big, then memory use keeps growing and lookups slow down.
-3. **Run a big streaming cluster** (Kafka/Flink/Redis): powerful, but adds significant monthly cost and needs a team to operate — too much for a small fintech.
-
-What this library does instead: keep a fixed set of small counters plus two running totals. Recording an event is one quick update; reading the answer is just returning the totals. Fast (under 2 ms), tiny memory (a few KB), no server required.
-
----
-
-## Key Features
-
-* **No dependencies:** Pure Python 3.9+ only — no database, no C extensions.
-* **Always fast:** Updates and lookups take the same time whether you process 10 or 10 million events (this is what "O(1)" means).
-* **Fixed memory:** The counters are created once up front and reused forever, so memory use stays the same no matter how many events arrive.
-* **Bounded tracking:** Optionally drop accounts that have been idle for a while, so tracking millions of distinct accounts doesn't grow memory forever.
-* **Low latency:** Reads stay under 5 ms even while processing 100,000+ events.
-
----
+It exists because small fraud and risk teams often need this exact check but can't justify a Redis cluster or a $10k/month streaming platform. `stream-velocity` gives them a fast, in-process alternative that uses a fixed amount of memory no matter how much data flows through it.
 
 ## Installation
 
@@ -37,86 +14,115 @@ What this library does instead: keep a fixed set of small counters plus two runn
 pip install -e .
 ```
 
-> **Note:** A public PyPI release is in progress. Until then, install directly from source as shown above.
+> A public PyPI release is in progress. Until then, install from source as shown above.
 
 ## Quick Start
 
 ```python
 from stream_velocity import VelocityTracker
 
-# Initialize tracker with a 5-minute rolling window (300s) divided into 5-second buckets
+# Track a 5-minute window, split into 5-second buckets
 tracker = VelocityTracker(window_seconds=300, bucket_seconds=5)
 
-# Record incoming real-time payment events
-account_id = "acc_990142"
+# Record incoming events for an account
+tracker.record_event(entity_id="acc_990142", amount=150.00)
+tracker.record_event(entity_id="acc_990142", amount=45.50)
+tracker.record_event(entity_id="acc_990142", amount=210.00)
 
-tracker.record_event(entity_id=account_id, amount=150.00)
-tracker.record_event(entity_id=account_id, amount=45.50)
-tracker.record_event(entity_id=account_id, amount=210.00)
+# Read the current rolling totals
+velocity = tracker.get_velocity("acc_990142")
 
-# Get the current rolling counts and sums
-velocity = tracker.get_velocity(account_id)
-
-print(f"Entity ID: {velocity.entity_id}")
-print(f"5-Minute Transaction Count: {velocity.count}")
-print(f"5-Minute Volume: ${velocity.sum_amount:,.2f}")
+print(velocity.count)        # 3
+print(velocity.sum_amount)   # 405.5
 ```
+
+## API Reference
+
+### `VelocityTracker`
+
+The main entry point. Tracks rolling velocity across many entities.
+
+```python
+VelocityTracker(
+    window_seconds=300,
+    bucket_seconds=5,
+    idle_timeout=None,
+    cleanup_interval=60.0,
+)
+```
+
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `window_seconds` | `int` | `300` | Length of the rolling window, in seconds. |
+| `bucket_seconds` | `int` | `5` | Width of each bucket, in seconds. `window_seconds` must be evenly divisible by `bucket_seconds`. |
+| `idle_timeout` | `float` or `None` | `None` | Drop an entity if it records no events for this many seconds. `None` disables eviction. Should be at least `window_seconds`. |
+| `cleanup_interval` | `float` | `60.0` | How often (seconds) the idle sweep runs automatically. |
+
+**Methods**
+
+- `record_event(entity_id, amount=0.0, timestamp=None)` → `None` — record one event.
+  - `timestamp` defaults to the current time; pass an explicit value for replay or testing.
+- `get_velocity(entity_id, timestamp=None)` → `VelocityResult` — current rolling totals for an entity. Returns zeros if the entity is unknown or has been evicted.
+- `cleanup(now=None)` → `None` — immediately drop entities idle longer than `idle_timeout`. The sweep also runs automatically every `cleanup_interval` seconds.
+- `len(tracker)` → `int` — number of entities currently tracked.
+
+### `VelocityResult`
+
+A frozen (immutable) dataclass returned by `get_velocity`.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `entity_id` | `str` | The entity the result is for. |
+| `window_seconds` | `int` | The window length used. |
+| `count` | `int` | Number of events in the window. |
+| `sum_amount` | `float` | Sum of `amount` values in the window. |
+
+### `BucketedRingBuffer` (lower-level)
+
+The underlying single-entity counter. Prefer `VelocityTracker` unless you need to manage one entity manually.
+
+```python
+buffer = BucketedRingBuffer(window_seconds=300, bucket_seconds=5)
+buffer.record(timestamp=1_000_000.0, amount=10.0)
+metrics = buffer.get_metrics(current_timestamp=1_000_010.0)  # {"window_seconds": 300, "count": 1, "sum_amount": 10.0}
+```
+
+## Features
+
+- **No dependencies** — pure Python 3.9+, no database, no C extensions.
+- **Always fast** — updates and lookups take the same time whether you process 10 or 10 million events (this is what "O(1)" means).
+- **Fixed memory** — counters are created once and reused forever, so memory use stays flat no matter how many events arrive.
+- **Bounded tracking** — set `idle_timeout` to drop idle entities automatically, so millions of distinct accounts don't grow memory forever.
+- **Low latency** — reads stay under 5 ms while processing 100,000+ events.
 
 ## How It Works
 
-A rolling window is split into a fixed number of small buckets (for example, a 5-minute window split into 60 buckets of 5 seconds each).
+A rolling window is split into a fixed number of buckets. For a 5-minute window with 5-second buckets, that's 60 buckets.
 
-- **Finding the right bucket:** each event's timestamp is turned into a bucket number with simple division: `slot_idx = (timestamp // bucket_seconds) % num_buckets`. One arithmetic step, no searching.
-- **Reusing old buckets:** when time moves past a bucket, its counters are wiped clean and reused, so the total number of buckets never changes.
-- **Running totals:** the library keeps a running total of the count and amount. Recording an event adds to the totals; when a bucket expires, its value is subtracted. Reading the answer means just returning the two totals.
-- **Only numbers are stored:** the library keeps only counts and sums — no raw transaction details are ever stored.
+- **Finding the bucket** — an event's timestamp maps to a bucket with one division: `slot = (timestamp // bucket_seconds) % num_buckets`.
+- **Reusing buckets** — as time passes, expired buckets are wiped clean and reused, so the total number of buckets never changes.
+- **Running totals** — two totals (count and amount) are kept up to date on every write, so reading the answer means just returning the totals — no scanning.
 
 ```
-[ Incoming Event Stream ] ──► Slot Index Math: (ts // 5) % 60
-                                      │
-                                      ▼
-┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┐
-│ 0 │ 1 │ 2 │...│ 57│ 58│ 59│ 0 │ 1 │ 2 │...│ 59│  ◄── Pre-allocated Ring Array
-└───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┘
-  ▲                       ▲
-  │ (Overwritten In-Place)│ (Active Window Slot)
+ events ──► slot = (timestamp // 5) % 60
+              │
+              ▼
+   ┌───┬───┬───┬───┬───┬───┬───┐
+   │ 0 │ 1 │ 2 │...│ 57│ 58│ 59│  ◄── fixed ring of buckets, reused forever
+   └───┴───┴───┴───┴───┴───┴───┘
 ```
 
-## Performance & Benchmarking
+Only counts and sums are stored — no raw transaction details.
 
-Run the automated latency SLA benchmark suite locally:
+## Benchmarks
+
+### Latency
 
 ```bash
 python3 tests/benchmark_latency.py
 ```
 
-### How much memory does it use?
-
-Run the memory benchmark to confirm the library uses a fixed amount of memory:
-
-```bash
-python3 tests/benchmark_memory.py
-```
-
-The library creates its counters once when it starts and reuses them as time
-moves forward, so it never allocates more memory as events pile up. A typical
-5-minute window uses only a few kilobytes — far below the 100 MB ceiling a
-lightweight fraud service can run within.
-
-For a long-running pipeline that sees millions of distinct accounts, pass
-`idle_timeout` so idle accounts are dropped automatically:
-
-```python
-tracker = VelocityTracker(window_seconds=300, bucket_seconds=5, idle_timeout=300)
-```
-
-An account is removed once it has recorded no events for `idle_timeout`
-seconds; by then its window is empty anyway, so nothing is lost.
-
-### Benchmark Output (representative local run)
-
-The following output was captured on an Apple M-series MacBook Air running Python 3.10.
-Absolute timings vary by machine; the SLA assertion (`< 5.0 ms`) is enforced in CI on every push.
+Representative output (Apple M-series MacBook Air, Python 3.10). Absolute timings vary by machine; the `< 5.0 ms` SLA is enforced in CI on every push.
 
 ```
 --- Running stream-velocity benchmark: 100,000 events ---
@@ -127,24 +133,33 @@ Aggregation result: 100000 events, $1,000,000.00
 SLA Target Passed: Query execution < 5.0 ms
 ```
 
-## Running with Docker
+### Memory
 
-A minimal image is provided that installs the library and runs the speed
-benchmark:
+```bash
+python3 tests/benchmark_memory.py
+```
+
+The library creates its counters once and reuses them, so memory stays flat as events pile up. A typical 5-minute window uses only a few kilobytes — far below the 100 MB ceiling a lightweight fraud service can run within.
+
+## Docker
+
+A minimal Alpine image installs the library and runs the speed benchmark:
 
 ```bash
 docker build -t stream-velocity .
 docker run --rm stream-velocity
 ```
 
-The image is built on Alpine Linux so it stays small.
+## Development
 
-## Running Unit Tests
+Run the test suite and benchmarks:
 
 ```bash
 python3 -m unittest discover -s tests
+python3 tests/benchmark_latency.py
+python3 tests/benchmark_memory.py
 ```
 
 ## License
 
-Distributed under the MIT License. See LICENSE for more information.
+MIT. See [LICENSE](LICENSE).
