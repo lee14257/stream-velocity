@@ -3,23 +3,21 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python Version](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
 
-`stream-velocity` is a zero-dependency, bounded-memory Python library designed for real-time transaction velocity aggregations across sliding time windows. Built specifically for low-latency feature evaluation in financial risk processing pipelines, credit card fraud engines, and payment security middleware.
-
-## Project Scope
-
-`stream-velocity` is deliberately scoped to a single, well-tested primitive — sliding-window velocity aggregation — rather than a monolithic fraud platform. It is one component of a larger open-source fraud-detection framework, alongside a deterministic rule-evaluation engine (`audit-rules`) and streaming ingestion examples. This micro-library approach keeps each component small, auditable, and maintainable by a single engineer while remaining deployable on resource-constrained infrastructure (<100 MB RAM).
+`stream-velocity` is a small, fast Python library that counts how many transactions happen in a rolling time window (for example, "the last 5 minutes"), and how much they total. It has no dependencies and keeps its memory use fixed no matter how much data flows through it, which makes it a good fit for fraud-detection and rate-limiting checks in real-time payment and e-commerce systems.
 
 ---
 
 ## Real-World Problem & Tradeoffs
 
-Evaluating velocity rules (e.g., *"Has account X executed >5 payments in the last 300 seconds?"*) during real-time transaction processing typically presents three architectural compromises:
+A fraud system constantly needs to answer *"has account X made more than 5 payments in the last 5 minutes?"* — instantly, over and over, as events stream in.
 
-1. **Database Queries (`SELECT COUNT(*)`):** Scanning historical transaction rows in traditional databases introduces 50–100 ms query latencies, risking checkout timeouts under heavy load.
-2. **Unbounded In-Memory Lists (`collections.deque`):** Storing raw event timestamps in dynamic arrays causes O(N) iteration delays and unbounded RAM growth, leading to memory leaks and Python garbage collection pauses during high-volume bot attacks.
-3. **Heavy Streaming Infrastructure (Kafka/Flink/Redis Clusters):** Deploying distributed streaming clusters provides scale but adds significant financial overhead ($10k+/month) and infrastructure maintenance burden for early-stage fintechs.
+The usual ways to solve this, and why they hurt:
 
-`stream-velocity` provides an embedded alternative: an **O(1) time-complexity, memory-bounded ring buffer** that computes rolling counts and sums in under **2 milliseconds** without external database dependencies.
+1. **Ask the database each time** (`SELECT COUNT(*)`): simple, but every query takes 50–100 ms and gets slower as the table grows.
+2. **Keep every event in a growing list** (`collections.deque`): works until the list gets big, then memory use keeps growing and lookups slow down.
+3. **Run a big streaming cluster** (Kafka/Flink/Redis): powerful, but adds significant monthly cost and needs a team to operate — too much for a small fintech.
+
+What this library does instead: keep a fixed set of small counters plus two running totals. Recording an event is one quick update; reading the answer is just returning the totals. Fast (under 2 ms), tiny memory (a few KB), no server required.
 
 ---
 
@@ -43,10 +41,9 @@ pip install -e .
 ## Quick Start
 
 ```python
-import time
 from stream_velocity import VelocityTracker
 
-# Initialize tracker with a 5-minute sliding window (300s) divided into 5-second sub-buckets
+# Initialize tracker with a 5-minute rolling window (300s) divided into 5-second buckets
 tracker = VelocityTracker(window_seconds=300, bucket_seconds=5)
 
 # Record incoming real-time payment events
@@ -65,14 +62,14 @@ print(f"5-Minute Volume: ${velocity['sum_amount']:,.2f}")
 print(f"Execution Latency: {velocity['execution_latency_ms']} ms")
 ```
 
-## Architecture & Data Structure
+## How It Works
 
-`stream-velocity` uses a Bucketed Ring Buffer algorithm:
+A rolling window is split into a fixed number of small buckets (for example, a 5-minute window split into 60 buckets of 5 seconds each).
 
-- **Sub-Bucket Allocation:** A time window W (e.g., 300 seconds) is divided into N fixed sub-buckets B (e.g., 60 buckets of 5 seconds each).
-- **Slot Computation:** Incoming event timestamps map directly to an array index via integer division: `slot_idx = (timestamp // bucket_seconds) % num_buckets`.
-- **Automatic Stale Data Eviction:** When a slot is accessed from a previous window iteration, stale counters are reset in-place without dynamic memory allocation or deletion (malloc/free).
-- **Data Reduction:** Raw transaction metadata (PII, cards, IP addresses) are discarded immediately after incrementing numeric aggregate counters.
+- **Finding the right bucket:** each event's timestamp is turned into a bucket number with simple division: `slot_idx = (timestamp // bucket_seconds) % num_buckets`. One arithmetic step, no searching.
+- **Reusing old buckets:** when time moves past a bucket, its counters are wiped clean and reused, so the total number of buckets never changes.
+- **Running totals:** the library keeps a running total of the count and amount. Recording an event adds to the totals; when a bucket expires, its value is subtracted. Reading the answer means just returning the two totals.
+- **Only numbers are stored:** the library keeps only counts and sums — no raw transaction details are ever stored.
 
 ```
 [ Incoming Event Stream ] ──► Slot Index Math: (ts // 5) % 60
