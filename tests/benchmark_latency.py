@@ -25,7 +25,7 @@ def run_benchmark(event_count=100000):
     print(f"Total write time for {event_count:,} events: {write_total_ms:.2f} ms")
     print(f"Average write latency per event: {avg_write_us:.2f} µs")
     print(f"Read query latency: {query_latency_ms:.4f} ms")
-    print(f"Aggregation result: {metrics['count']} events, ${metrics['sum_amount']:,.2f}")
+    print(f"Aggregation result: {metrics.count} events, ${metrics.sum_amount:,.2f}")
 
     assert query_latency_ms < 5.0, f"SLA Violation: Query took {query_latency_ms:.2f}ms (target <5ms)"
     print("SLA Target Passed: Query execution < 5.0 ms")

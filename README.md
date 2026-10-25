@@ -26,6 +26,7 @@ What this library does instead: keep a fixed set of small counters plus two runn
 * **No dependencies:** Pure Python 3.9+ only — no database, no C extensions.
 * **Always fast:** Updates and lookups take the same time whether you process 10 or 10 million events (this is what "O(1)" means).
 * **Fixed memory:** The counters are created once up front and reused forever, so memory use stays the same no matter how many events arrive.
+* **Bounded tracking:** Optionally drop accounts that have been idle for a while, so tracking millions of distinct accounts doesn't grow memory forever.
 * **Low latency:** Reads stay under 5 ms even while processing 100,000+ events.
 
 ---
@@ -53,13 +54,12 @@ tracker.record_event(entity_id=account_id, amount=150.00)
 tracker.record_event(entity_id=account_id, amount=45.50)
 tracker.record_event(entity_id=account_id, amount=210.00)
 
-# Retrieve instant velocity metrics (<2ms latency)
+# Get the current rolling counts and sums
 velocity = tracker.get_velocity(account_id)
 
-print(f"Entity ID: {velocity['entity_id']}")
-print(f"5-Minute Transaction Count: {velocity['count']}")
-print(f"5-Minute Volume: ${velocity['sum_amount']:,.2f}")
-print(f"Execution Latency: {velocity['execution_latency_ms']} ms")
+print(f"Entity ID: {velocity.entity_id}")
+print(f"5-Minute Transaction Count: {velocity.count}")
+print(f"5-Minute Volume: ${velocity.sum_amount:,.2f}")
 ```
 
 ## How It Works
@@ -102,6 +102,16 @@ The library creates its counters once when it starts and reuses them as time
 moves forward, so it never allocates more memory as events pile up. A typical
 5-minute window uses only a few kilobytes — far below the 100 MB ceiling a
 lightweight fraud service can run within.
+
+For a long-running pipeline that sees millions of distinct accounts, pass
+`idle_timeout` so idle accounts are dropped automatically:
+
+```python
+tracker = VelocityTracker(window_seconds=300, bucket_seconds=5, idle_timeout=300)
+```
+
+An account is removed once it has recorded no events for `idle_timeout`
+seconds; by then its window is empty anyway, so nothing is lost.
 
 ### Benchmark Output (representative local run)
 
