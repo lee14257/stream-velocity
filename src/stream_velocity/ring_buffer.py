@@ -84,5 +84,5 @@ class BucketedRingBuffer:
         return {
             "window_seconds": self.window_seconds,
             "count": self.running_count,
-            "sum_amount": round(self.running_sum, 2)
+            "sum_amount": self.running_sum,
         }

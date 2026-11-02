@@ -95,6 +95,12 @@ metrics = buffer.get_metrics(current_timestamp=1_000_010.0)  # {"window_seconds"
 - **Bounded tracking** — set `idle_timeout` to drop idle entities automatically, so millions of distinct accounts don't grow memory forever.
 - **Low latency** — reads stay under 5 ms while processing 100,000+ events.
 
+## Limitations
+
+- **Single process** — the tracker lives in memory and is not shared across processes or machines. Run one instance per worker, or pair it with an external store for distributed setups.
+- **Not persistent** — state is lost on restart; there is no disk or external storage.
+- **Not thread-safe** — use one tracker per thread or worker, or add external locking if you share a tracker across threads.
+
 ## How It Works
 
 A rolling window is split into a fixed number of buckets. For a 5-minute window with 5-second buckets, that's 60 buckets.
