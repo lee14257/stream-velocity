@@ -2,6 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python Version](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
+[![PyPI version](https://img.shields.io/pypi/v/stream-velocity.svg)](https://pypi.org/project/stream-velocity/)
 [![CI](https://img.shields.io/github/actions/workflow/status/lee14257/stream-velocity/test.yml?branch=main)](https://github.com/lee14257/stream-velocity/actions/workflows/test.yml)
 
 `stream-velocity` is a small, dependency-free Python library that answers one question in real time: **"how many events happened in the last few minutes, and how much did they total?"** — per account, card, or any other entity.
@@ -11,10 +12,8 @@ It exists because small fraud and risk teams often need this exact check but can
 ## Installation
 
 ```bash
-pip install -e .
+pip install stream-velocity
 ```
-
-> A public PyPI release is in progress. Until then, install from source as shown above.
 
 ## Quick Start
 
